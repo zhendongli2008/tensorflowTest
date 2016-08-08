@@ -95,7 +95,7 @@ with tf.Session() as sess:
    print 'mps00',sess.run(mps00)
    print 'tr1',sess.run(tr1)
    print 'g1',sess.run(g1)
-   writer = tf.train.SummaryWriter("logs/", sess.graph)
+   #writer = tf.train.SummaryWriter("logs/", sess.graph)
 
 #######
 # ova  
@@ -125,19 +125,39 @@ for i in range(1,L):
    print 'i=',i
    lenv[i] = leftPropogate(lenv[i-1],mps[i])
 
+ova = tf.reshape(lenv[L-1],[])
+# gradient
+dOVAdL = tf.gradients(ova,mps[-1],name='dOVAdL')
+ic = 4
+dOVAdC = tf.gradients(ova,mps[ic],name='dOVAdC')
+
 init = tf.initialize_all_variables()  # must have if define variable
 # Try to contract <Psi|Psi>
 with tf.Session() as sess:
    sess.run(init)
-   res = sess.run(lenv[L-1])
-   ova = sess.run(tf.reshape(res,[]))
-   print ova
+   print sess.run(ova)
    print ova0
 
-# gradient
-# dova = 
+   # Test for d<P|P>/dA[-1]
+   print sess.run(dOVAdL)
+   v1 = tf.reshape(mps[-1],[n*D])
+   v2 = tf.reshape(dOVAdL[0],[n*D])
+   # This is correct 
+   print sess.run(tf.reduce_sum(tf.mul(v1,v2))/2.0)
+ 
+   # Test for d<P|P>/dA[4]
+   print sess.run(dOVAdC)
+   v1 = tf.reshape(mps[ic],[n*D*D])
+   v2 = tf.reshape(dOVAdC[0],[n*D*D])
+   # This is correct 
+   print sess.run(tf.reduce_sum(tf.mul(v1,v2))/2.0)
+    
+   writer = tf.train.SummaryWriter("logs/", sess.graph)
 
+#
 # opt?
 #
 
-
+# 
+# tensordot? follow qtensor implementation
+#
