@@ -387,7 +387,7 @@ def mps_scale(mps,alpha):
 def mps_normalize(mps):
    norm=mps_norm(mps)
    mps_scale(mps,1.0/norm)
-
+ 
 # Diff <P-Q|P-Q>
 def mps_diff(mps1,mps2,iprt=0):
    pp=mps_dot(mps1,mps1)

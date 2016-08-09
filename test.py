@@ -10,7 +10,7 @@ import numpy
 import mpslib
 
 L = 50
-D = 100
+D = 10
 n = 2 
 numpy.random.seed(0)
 mps0 = mpslib.mps_random0(L,n,D)
@@ -327,8 +327,8 @@ tf_mpsnormalize(mps)
 mps1 = tf_mpsgen(L,n,D1)
 normalization = tf.rsqrt(tf.mul(tf_mpsdot(mps1,mps1),tf_mpsdot(mps,mps)))
 diff = 2.0-2.0*tf.mul(tf_mpsdot(mps,mps1),normalization)
-#mini = tf.train.GradientDescentOptimizer(0.3).minimize(diff,var_list=mps1)
-mini = tf.train.MomentumOptimizer(0.1,0.1).minimize(diff,var_list=mps1)
+mini = tf.train.GradientDescentOptimizer(0.3).minimize(diff,var_list=mps1)
+#mini = tf.train.MomentumOptimizer(0.1,0.1).minimize(diff,var_list=mps1)
 #mini = tf.train.RMSPropOptimizer(0.3).minimize(diff,var_list=mps1)
 
 init = tf.initialize_all_variables()
@@ -343,6 +343,8 @@ fig = plt.figure()
 ax = fig.add_subplot(1,1,1)
 plt.xlim(0,nsteps)
 plt.ylim(-0.1,2.1)
+plt.xlabel('steps')
+plt.ylabel('error')
 plt.ion()
 plt.show()
 
