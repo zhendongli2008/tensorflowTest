@@ -7,6 +7,7 @@
 import h5py
 import numpy
 import tensorflow as tf
+import anim
 
 def testHmpo(fname='hop',debug=True):
    f = h5py.File(fname)
@@ -59,32 +60,45 @@ def calHexp(mps,fname='hop',debug=True):
    return Hpp 
 
 def optimize(arg,optVal,nsteps=100):
-   mini = tf.train.GradientDescentOptimizer(0.3).minimize(optVal,var_list=arg)
+   # optimizer
+   #mini = tf.train.GradientDescentOptimizer(0.8).minimize(optVal,var_list=arg)
+   mini = tf.train.AdamOptimizer().minimize(optVal,var_list=arg)
+   # plot
    difflst = []
    import matplotlib.pyplot as plt
    fig = plt.figure()
    ax = fig.add_subplot(1,1,1)
    plt.xlim(0,nsteps)
-   #plt.ylim(-0.1,2.1)
    plt.xlabel('steps')
    plt.ylabel('error')
+   # fci
+   efci = -7.83990801
+   plt.axhline(y=efci, linewidth=2, color='b')
+   plt.ylim(efci-0.01,efci+0.15)
    plt.ion()
    plt.show()
+   prefix = 'energy'
    # start
-   for i in range(nsteps):
-      valc = sess.run(optVal)
-      print '\ni=',i,'valc=',valc,'norm=',sess.run(tflib.mps_dot(mps1,mps1))
-      # opt
-      sess.run(mini)
-      # to visualize the result and improvement
-      try:
-          ax.lines.remove(lines[0])
-      except Exception:
-          pass
-      # plot the prediction
-      difflst.append(valc)
-      lines = ax.plot(range(i+1),difflst,'ro-',lw=2)
-      plt.pause(0.4)
+   init = tf.initialize_all_variables()
+   with tf.Session() as sess:
+      sess.run(init)
+      for i in range(nsteps):
+	 valc = sess.run(optVal)
+         print '\ni=',i,'valc=',valc,'norm=',sess.run(tflib.mps_dot(mps1,mps1))
+         # opt
+         sess.run(mini)
+         # to visualize the result and improvement
+         try:
+             ax.lines.remove(lines[0])
+         except Exception:
+             pass
+         # plot the prediction
+         difflst.append(valc)
+         lines = ax.plot(range(i+1),difflst,'ro-',lw=2)
+	 plt.pause(0.02)
+         plt.savefig(prefix+str(i)+".png",dpi=100)
+
+   anim.genGIF(prefix)
    return valc
 
 if __name__ == '__main__':
@@ -102,9 +116,4 @@ if __name__ == '__main__':
    normalization = tflib.mps_dot(mps1,mps1)
    Hpp = calHexp(mps1)
    energy = tf.div(Hpp,normalization)
-
-   init = tf.initialize_all_variables()
-   
-   with tf.Session() as sess:
-      sess.run(init)
-      optimize(mps1,energy,nsteps=300)
+   optimize(mps1,energy,nsteps=300)
