@@ -9,11 +9,12 @@ import tensorflow as tf
 import numpy
 import mpslib
 
-L = 10
-D = 3
+L = 50
+D = 100
 n = 2 
 numpy.random.seed(0)
 mps0 = mpslib.mps_random0(L,n,D)
+mpslib.mps_normalize(mps0)
 ova0 = mpslib.mps_dot(mps0,mps0)
 print '<p|p>=',ova0
 
@@ -28,8 +29,6 @@ for i in range(L):
       mps[i] = tf.Variable(mps0[i].transpose(1,0,2),name=nm)
 
 init = tf.initialize_all_variables()  # must have if define variable
-
-# How to do assignment?
 
 # initialize and shape
 with tf.Session() as sess:
@@ -155,9 +154,217 @@ with tf.Session() as sess:
    writer = tf.train.SummaryWriter("logs/", sess.graph)
 
 #
-# opt?
+# optization for \sum_{all indicies} (A1 - A0)^2 => A1=A0 
 #
+mps1 = [0]*L
+for i in range(L):
+   nm = 'mps1_site'+str(i)
+   if i == 0:
+      mps1[i] = tf.Variable(tf.zeros([n,1,D],dtype=tf.float64),name=nm)
+   elif i == L-1:
+      mps1[i] = tf.Variable(tf.zeros([n,D,1],dtype=tf.float64),name=nm)
+   else:
+      mps1[i] = tf.Variable(tf.zeros([n,D,D],dtype=tf.float64),name=nm)
+
+diff = 0.0
+for i in range(L):
+  diff += tf.reduce_sum(tf.square(tf.sub(mps1[i],mps[i])))
+
+grad = tf.gradients(diff,mps1[0])
+
+mini = tf.train.GradientDescentOptimizer(0.3).minimize(diff,var_list=mps1)
+
+init = tf.initialize_all_variables()
+sess = tf.Session()
+sess.run(init)
+
+ifprt = False
+for i in range(100):
+   #Test gradient: Should be -2A0 if A1==0
+   #print 'grad=',sess.run(grad) 
+   #print sess.run(mps[0])
+   #print sess.run(mps1[0])
+
+   if i == 0:
+      print '\nPrint initial data:'
+      print '\nsite[0]'
+      print 'mps0-ndarray'
+      print mps0[0]
+      print 'mps-tf'
+      print sess.run(mps[0])
+      print 'mps1-tf'
+      print sess.run(mps1[0])
+      
+      print '\nsite[-1]'
+      print 'mps0-ndarray'
+      print mps0[-1]
+      print 'mps-tf'
+      print sess.run(mps[-1])
+      print 'mps1-tf'
+      print sess.run(mps1[-1])
+
+   if i % 2 == 0:
+      print '\ni=',i,'diff=',sess.run(diff)
+      if ifprt:
+         print 'before:'
+	 print sess.run(mps[0])
+         print sess.run(mps1[0])
+   # opt
+   sess.run(mini)
+   if i % 2 == 0:
+      if ifprt:
+         print 'after:'
+	 print sess.run(mps[0])
+         print sess.run(mps1[0])
+   if sess.run(diff) < 1.e-16:
+      print '\nPrint final results:'
+      print '\nsite[0]'
+      print 'mps0-ndarray'
+      print mps0[0]
+      print 'mps-tf'
+      print sess.run(mps[0])
+      print 'mps1-tf'
+      print sess.run(mps1[0])
+      
+      print '\nsite[-1]'
+      print 'mps0-ndarray'
+      print mps0[-1]
+      print 'mps-tf'
+      print sess.run(mps[-1])
+      print 'mps1-tf'
+      print sess.run(mps1[-1])
+      break
+
+print tf.trainable_variables()
+print mps[0]
+print mps[0].name
+print mps[0].value()
 
 # 
-# tensordot? follow qtensor implementation
+# tensordot? follow my_qtensor implementation
 #
+def tf_tensordot(tf1,tf2,axes):
+   debug = True
+   shp1 = tf1.get_shape()
+   shp2 = tf2.get_shape()
+   r1 = range(len(shp1))
+   r2 = range(len(shp2))
+   # Indices
+   i1,i2 = axes
+   e1 = list(set(r1)-set(i1))
+   e2 = list(set(r2)-set(i2))
+   ne1 = len(e1)
+   ne2 = len(e2)
+   nii = len(i1)
+   rank = ne1+ne2
+   sdx1 = e1+i1 # sort index
+   sdx2 = i2+e2
+   # Shapes - get_reshape() return Dimensions
+   eshp1 = [shp1[i].value for i in e1]
+   ishp1 = [shp1[i].value for i in i1]
+   eshp2 = [shp2[i].value for i in e2]
+   ishp2 = [shp2[i].value for i in i2]
+   esize1 = numpy.prod(eshp1) 
+   isize1 = numpy.prod(ishp1)
+   esize2 = numpy.prod(eshp2)
+   isize2 = numpy.prod(ishp2)
+   mtf1 = tf.reshape(tf.transpose(tf1,perm=sdx1),[esize1,isize1])
+   mtf2 = tf.reshape(tf.transpose(tf2,perm=sdx2),[isize2,esize2])
+   tfc = tf.reshape( tf.matmul(mtf1,mtf2) , eshp1+eshp2 )
+   return tfc
+
+init = tf.initialize_all_variables()  # must have if define variable
+with tf.Session() as sess: 
+   sess.run(init)
+   print 'l0'
+   print sess.run(lenv[0]) 
+   l0 = tf_tensordot(mps[0],mps[0],axes=([0,1],[0,1]))
+   print sess.run(l0)
+
+#
+# optization for minimize |psi1-psi0|^2 = <1|1> - 2*<0|1> + <0|0>
+#
+print '\n=============== Least square fit ============'
+
+def tf_mpsgen(L,n,D):
+   mps0 = mpslib.mps_random0(L,n,D)
+   mpslib.mps_normalize(mps0)
+   mps = [0]*L
+   for i in range(L):
+      nm = 'mps_site'+str(i)
+      if i == 0:
+         mps[i] = tf.Variable(mps0[i].reshape(n,1,D),name=nm)
+      elif i == L-1:
+         mps[i] = tf.Variable(mps0[i].T.reshape(n,D,1),name=nm)
+      else:
+         mps[i] = tf.Variable(mps0[i].transpose(1,0,2),name=nm)
+   return mps
+
+def tf_mpsdot(mps1,mps2):
+   tmp1 = tf_tensordot(mps1[0],mps2[0],axes=([0,1],[0,1]))
+   N = len(mps1)
+   for i in range(1,N):
+      tmp2 = tf_tensordot(tmp1,mps2[i],axes=([1],[1]))
+      tmp1 = tf_tensordot(mps1[i],tmp2,axes=([1,0],[0,1]))
+   ova = tf.reshape(tmp1,[])
+   return ova
+
+import math
+def tf_mpsnormalize(mps):
+   norm2 = tf_mpsdot(mps,mps)
+   tf_mpsscale(mps,tf.rsqrt(norm2))
+   return tf.constant(0)
+
+def tf_mpsscale(mps,alpha):
+   N = len(mps)
+   fac = tf.pow(alpha,1.0/float(N))
+   for i in range(N):
+      mps[i] = tf.mul(mps[i],fac)
+   return tf.constant(0)
+
+D1 = 20
+tf_mpsnormalize(mps)
+mps1 = tf_mpsgen(L,n,D1)
+normalization = tf.rsqrt(tf.mul(tf_mpsdot(mps1,mps1),tf_mpsdot(mps,mps)))
+diff = 2.0-2.0*tf.mul(tf_mpsdot(mps,mps1),normalization)
+#mini = tf.train.GradientDescentOptimizer(0.3).minimize(diff,var_list=mps1)
+mini = tf.train.MomentumOptimizer(0.1,0.1).minimize(diff,var_list=mps1)
+#mini = tf.train.RMSPropOptimizer(0.3).minimize(diff,var_list=mps1)
+
+init = tf.initialize_all_variables()
+sess = tf.Session()
+sess.run(init)
+
+nsteps = 100
+difflst = []
+
+import matplotlib.pyplot as plt
+fig = plt.figure()
+ax = fig.add_subplot(1,1,1)
+plt.xlim(0,nsteps)
+plt.ylim(-0.1,2.1)
+plt.ion()
+plt.show()
+
+for i in range(nsteps):
+
+   diffc = sess.run(diff)
+   print '\ni=',i
+   print 'n0',sess.run(tf_mpsdot(mps,mps))	
+   print 'n1',sess.run(tf_mpsdot(mps1,mps1))	
+   print 'df',diffc
+
+   # opt
+   sess.run(mini)
+   
+   # to visualize the result and improvement
+   try:
+       ax.lines.remove(lines[0])
+   except Exception:
+       pass
+   # plot the prediction
+   difflst.append(diffc)
+   lines = ax.plot(range(i+1),difflst,'ro-',lw=2)
+   plt.pause(0.4)
+
+exit()
