@@ -34,13 +34,13 @@ def tensordot(tf1,tf2,axes):
    ishp1 = [shp1[i].value for i in i1]
    eshp2 = [shp2[i].value for i in e2]
    ishp2 = [shp2[i].value for i in i2]
-   esize1 = numpy.prod(eshp1) 
-   isize1 = numpy.prod(ishp1)
-   esize2 = numpy.prod(eshp2)
-   isize2 = numpy.prod(ishp2)
+   esize1 = int(numpy.prod(eshp1)) 
+   isize1 = int(numpy.prod(ishp1))
+   esize2 = int(numpy.prod(eshp2))
+   isize2 = int(numpy.prod(ishp2))
    mtf1 = tf.reshape(tf.transpose(tf1,perm=sdx1),[esize1,isize1])
    mtf2 = tf.reshape(tf.transpose(tf2,perm=sdx2),[isize2,esize2])
-   tfc = tf.reshape( tf.matmul(mtf1,mtf2) , eshp1+eshp2 )
+   tfc = tf.reshape( tf.matmul(mtf1,mtf2), eshp1+eshp2 )
    return tfc
 
 def mps_rand(L,n,D):
@@ -70,14 +70,30 @@ def mps_scale(mps,alpha):
    return tf.constant(0)
 
 def mps_dot(mps1,mps2):
-   tmp1 = tensordot(mps1[0],mps2[0],axes=([0,1],[0,1]))
    N = len(mps1)
+   tmp1 = tensordot(mps1[0],mps2[0],axes=([0,1],[0,1]))
    for i in range(1,N):
       tmp2 = tensordot(tmp1,mps2[i],axes=([1],[0]))
       tmp1 = tensordot(mps1[i],tmp2,axes=([0,1],[0,1]))
-   ova = tf.reshape(tmp1,[])
+   ova = tf.reshape(tmp1,[],name='ova')
    return ova
 
+def mps_dotLR(mps1,mps2):
+   N = len(mps1)
+   Nl = 1 #N/2
+   # left
+   tmpl = tensordot(mps1[0],mps2[0],axes=([0,1],[0,1]))
+   for i in range(1,Nl):
+      tmp2 = tensordot(tmpl,mps2[i],axes=([1],[0]))
+      tmpl = tensordot(mps1[i],tmp2,axes=([0,1],[0,1]))
+   # right
+   tmpr = tensordot(mps1[-1],mps2[-1],axes=([1,2],[1,2]))
+   for i in range(N-2,Nl-1,-1):
+      tmp2 = tensordot(mps2[i],tmpr,axes=([2],[1]))
+      tmpr = tensordot(mps1[i],tmp2,axes=([1,2],[1,2]))
+   tmp = tensordot(tmpl,tmpr,axes=([0,1],[0,1]))
+   ova = tf.reshape(tmp,[],name='ova')
+   return ova
 
 def mps_rand0(L,n,D,occun,noise=0.1):
    assert n == 4

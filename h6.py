@@ -116,4 +116,4 @@ if __name__ == '__main__':
    normalization = tflib.mps_dot(mps1,mps1)
    Hpp = calHexp(mps1)
    energy = tf.div(Hpp,normalization)
-   optimize(mps1,energy,nsteps=300)
+   optimize(mps1,energy,nsteps=500)
