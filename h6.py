@@ -72,9 +72,10 @@ def optimize(arg,optVal,nsteps=100):
    plt.xlabel('steps')
    plt.ylabel('error')
    # fci
+   ehf  = -7.73937394
    efci = -7.83990801
    plt.axhline(y=efci, linewidth=2, color='b')
-   plt.ylim(efci-0.01,efci+0.15)
+   plt.ylim(efci-0.01,ehf+0.01)
    plt.ion()
    plt.show()
    prefix = 'energy'
@@ -103,7 +104,7 @@ def optimize(arg,optVal,nsteps=100):
 
 if __name__ == '__main__':
    
-   testHmpo()
+   testHmpo('hop6')
 
    import tflib
    L = 6
@@ -114,6 +115,6 @@ if __name__ == '__main__':
    mps1 = tflib.mps_rand0(L,n,D1,occun)
 
    normalization = tflib.mps_dot(mps1,mps1)
-   Hpp = calHexp(mps1)
+   Hpp = calHexp(mps1,'hop6')
    energy = tf.div(Hpp,normalization)
    optimize(mps1,energy,nsteps=500)
