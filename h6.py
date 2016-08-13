@@ -8,6 +8,7 @@ import h5py
 import numpy
 import tensorflow as tf
 import anim
+import tflib
 
 def testHmpo(fname='hop',debug=True):
    f = h5py.File(fname)
@@ -106,12 +107,11 @@ if __name__ == '__main__':
    
    testHmpo('hop6')
 
-   import tflib
    L = 6
    n = 4
    D1 = 10
    #mps1 = tflib.mps_rand(L,n,D1)
-   occun = [1]*6+[0]*6 
+   occun = [1]*L+[0]*L 
    mps1 = tflib.mps_rand0(L,n,D1,occun)
 
    normalization = tflib.mps_dot(mps1,mps1)

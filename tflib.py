@@ -108,18 +108,22 @@ def mps_rand0(L,n,D,occun,noise=0.1):
          site = mps0[i].reshape(D,n,1)
       else:
          site = mps0[i].copy()
-      # occ
-      na = occun[2*i]
-      nb = occun[2*i+1]
-      th = 1.e-4
       site = noise*site
-      if abs(na)<th and abs(nb)<th:
-	 site[0,0,0] = 1.0
-      elif abs(na)<th and abs(nb-1.0)<th:
-	 site[0,1,0] = 1.0
-      elif abs(na-1.0)<th and abs(nb)<th:
-	 site[0,2,0] = 1.0
-      elif abs(na-1.0)<th and abs(nb-1.0)<th:
-	 site[0,3,0] = 1.0
+      # occ
+      icase = occIcase(occun,i)
+      site[0,icase,0] = 1.0
       mps[i] = tf.Variable(site)
    return mps
+
+def occIcase(occun,i,th=1.e-4):
+   na = occun[2*i]
+   nb = occun[2*i+1]
+   if abs(na)<th and abs(nb)<th:
+      icase = 0
+   elif abs(na)<th and abs(nb-1.0)<th:
+      icase = 1
+   elif abs(na-1.0)<th and abs(nb)<th:
+      icase = 2
+   elif abs(na-1.0)<th and abs(nb-1.0)<th:
+      icase = 3
+   return icase
