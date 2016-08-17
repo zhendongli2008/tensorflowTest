@@ -8,6 +8,7 @@ import numpy
 import tensorflow as tf
 import anim
 import tflib
+import treelib
 
 # hmpo = \sum_{x} wts,Hx with Hx[MPO] is a list of sites
 def loadHmpo(fname='hop8',debug=True):
@@ -56,9 +57,14 @@ def optimize(arg,optVal,nsteps=100,ifgif=False):
    plt.show()
    prefix = 'energy'
    # start
+   saver = tf.train.Saver()
    init = tf.initialize_all_variables()
    with tf.Session() as sess:
       sess.run(init)
+      try:
+         saver.restore(sess, "./sites.ckpt")
+      except:
+         pass
       for i in range(nsteps):
 	 valc = sess.run(optVal)
          print '\ni=',i,'valc=',valc,'norm=',\
@@ -75,6 +81,9 @@ def optimize(arg,optVal,nsteps=100,ifgif=False):
          lines = ax.plot(range(i+1),difflst,'ro-',lw=2)
 	 plt.pause(0.02)
 	 if ifgif: plt.savefig(prefix+str(i)+".png",dpi=100)
+         treelib.tree_save(sites,sess)
+      # Save results
+      save_path = saver.save(sess, "./sites.ckpt")
    if ifgif: anim.genGIF(prefix)
    return valc
 
@@ -136,25 +145,6 @@ def tree_rand0(depth,n,D1,occun,noise=1.e-2):
    for idx,site in enumerate(isometries):
       sites[idx] = tf.Variable(site)
    return sites
-
-# Disentangler
-def tree_udis0(depth,n,D1,noise=1.e-2):
-   print '\n[tree_udis0]'
-   usites = []
-   ni = n
-   idx = 0
-   for i in range(depth-1):
-      nup = min(ni**2,D1)
-      nlsite = 2**(depth-1-i)
-      nusite = nlsite-1
-      print 'layer=',i,'nusite=',nusite,'ni=',ni
-      for j in range(nusite):
-         t = numpy.random.uniform(-1,1,ni*ni*ni*ni)
-         t = t*noise
-	 usites.append( tf.Variable(t) )
-         idx += 1
-      ni = nup
-   return usites
 
 # <T1|T2>
 def tree_dot(depth,t1,t2,debug=False):
@@ -295,12 +285,6 @@ if __name__ == '__main__':
    for isite in range(nsite):
       print isite,sites[isite].get_shape()
 
-   #disentanglers   
-   sites2 = tree_udis0(depth,n,D1)
-   nsite2 = len(sites2)
-   for isite in range(nsite2):
-      print isite,sites2[isite].get_shape()
-
    normalization = tree_dot(depth,sites,sites)
 
    Npp = calNexp(depth,sites)
@@ -329,4 +313,4 @@ if __name__ == '__main__':
       print '<P|H|P>=',sess.run(Hpp)
       print 'Energy =',sess.run(energy)
 
-   optimize([depth,sites,hmpo],energy,nsteps=500)
+   optimize([depth,sites,hmpo],energy,nsteps=5)
