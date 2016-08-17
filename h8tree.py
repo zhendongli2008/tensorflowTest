@@ -1,6 +1,7 @@
 # 
 # Electronic energy of H8 at R=1A
 #
+import copy
 import math
 import h5py
 import numpy
@@ -19,114 +20,24 @@ def loadHmpo(fname='hop8',debug=True):
       print 'nsite=',nsite
       print 'nops =',nops
       print 'hpwts=',hpwts
-   mpos = [[0]*nsite]*nops
-   for isite in range(nsite):  
-      gname = 'site'+str(isite)
-      grp = f[gname]
-      for iop in range(nops):
-	 if debug: print 'isite,iop,shape=',isite,iop,grp['op'+str(iop)].shape
-	 mpos[iop][isite] = grp['op'+str(iop)].value
+   #
+   # For some reason, mpos = [[0]*nsite]*nops does not work!
+   #
+   mpos = [0]*nops
+   for iop in range(nops):
+      lst = [0]*nsite
+      for isite in range(nsite):  
+         lst[isite] = f['site'+str(isite)+'/op'+str(iop)].value
+      mpos[iop] = lst
    f.close()
    hmpo = (hpwts,mpos)
    return hmpo
 
-# <T|N|T>
-def calHexp(depth,t1,t2,hmpo,debug=True):
-   if debug: print '\n[calHexp]'
-   hpwts,mpos = hmpo
-   nops = len(mpos)
-   nsite = len(mpos[0])
-   if debug: print ' nops/nsite=',nops,nsite
-   n1 = len(t1)
-   n2 = len(t2)
-   assert n1 == n2 
-   # sum over operators: ex = <Psi|Hx|Psi>
-   Hpp = tf.Variable(0.,dtype=tf.float64)
-   for iop in range(nops):
-      # for each operator, we do the renormalization along tree depth
-      ovaSeed0 = [tf.constant(site) for site in mpos[iop]]
-      idx = 0
-      for i in range(depth):
-         nlsite = 2**(depth-1-i)
-         ovaSeed1 = [0]*nlsite
-         for j in range(nlsite):
-   	    s1 = ovaSeed0[2*j]
-   	    s2 = ovaSeed0[2*j+1]
-   	    bs = t1[idx] 
-   	    ks = t2[idx]
-   	    # contraction of mpo
-   	    #     |
-   	    #    / \
-            # --*---*--
-   	    #    \ /
-   	    #     |
-	    tmp = tflib.tensordot(bs,s1,axes=([1],[2]))      # (u,d1,d2),(l,r,d1,d1')=>(u,d2,l,r,d1')
-	    tmp = tflib.tensordot(tmp,s2,axes=([1,3],[2,0])) # (u,d2,l,r,d1'),(r,r',d2,d2')=>(u,l,d1',r',d2')
-	    tmp = tflib.tensordot(tmp,ks,axes=([2,4],[1,2])) # (u,l,d1',r',d2'),(u',d1',d2')=>(u,l,r',u')
-	    ovaSeed1[j] = tf.transpose(tmp,perm=[1,2,0,3])   # (u,l,r',u')->(l,r',u,u')
-	    idx += 1
-         ovaSeed0 = [ova for ova in ovaSeed1]
-      print 'iop=',iop,ovaSeed0[0],hpwts[iop]
-      Hpp += tf.reshape(tf.mul(ovaSeed0[0],hpwts[iop]),[])
-   return Hpp 
-
-# <T|N|T>
-def calNexp(depth,t1,debug=True):
-   if debug: print '\n[calNexp]'
-   iden = numpy.identity(4)
-   nmat = numpy.zeros((4,4))
-   nmat[1,1] = 1.0
-   nmat[2,2] = 1.0
-   nmat[3,3] = 2.0
-   nsite = 2**depth
-   ovaSeed0 = [0]*nsite
-   # s0
-   tmp = numpy.zeros((1,2,4,4))
-   tmp[0,0] = iden
-   tmp[0,1] = nmat
-   ovaSeed0[0] = tmp
-   # s0-s[-1]
-   tmp = numpy.zeros((2,2,4,4))
-   tmp[0,0] = iden
-   tmp[0,1] = nmat
-   tmp[1,1] = iden
-   for i in range(1,nsite-1):
-      ovaSeed0[i] = tmp
-   # s[-1]
-   tmp = numpy.zeros((2,1,4,4))
-   tmp[0,0] = nmat
-   tmp[1,0] = iden
-   ovaSeed0[-1] = tmp
-   ovaSeed0 = [tf.constant(mat) for mat in ovaSeed0]
-   Hpp = tf.Variable(0.,dtype=tf.float64)
-   idx = 0
-   for i in range(depth):
-      nlsite = 2**(depth-1-i)
-      ovaSeed1 = [0]*nlsite
-      for j in range(nlsite):
-         s1 = ovaSeed0[2*j]
-         s2 = ovaSeed0[2*j+1]
-         bs = t1[idx] 
-         ks = t1[idx]
-         # contraction of mpo
-         #     |
-         #    / \
-         # --*---*--
-         #    \ /
-         #     |
-         tmp = tflib.tensordot(bs,s1,axes=([1],[2]))      # (u,d1,d2),(l,r,d1,d1')=>(u,d2,l,r,d1')
-         tmp = tflib.tensordot(tmp,s2,axes=([1,3],[2,0])) # (u,d2,l,r,d1'),(r,r',d2,d2')=>(u,l,d1',r',d2')
-         tmp = tflib.tensordot(tmp,ks,axes=([2,4],[1,2])) # (u,l,d1',r',d2'),(u',d1',d2')=>(u,l,r',u')
-         ovaSeed1[j] = tf.transpose(tmp,perm=[1,2,0,3])   # (u,l,r',u')->(l,r',u,u')
-         idx += 1
-      ovaSeed0 = [ova for ova in ovaSeed1]
-   Hpp += tf.reshape(ovaSeed0[0],[])
-   return Hpp 
-
 # optimizer
 def optimize(arg,optVal,nsteps=100,ifgif=False):
    depth,sites,hmpo = arg
-   mini = tf.train.AdamOptimizer().minimize(optVal,var_list=sites)
+   # best opt. tested.
+   mini = tf.train.AdamOptimizer(0.01).minimize(optVal,var_list=sites)
    # plot
    difflst = []
    import matplotlib.pyplot as plt
@@ -134,12 +45,13 @@ def optimize(arg,optVal,nsteps=100,ifgif=False):
    ax = fig.add_subplot(1,1,1)
    plt.xlim(0,nsteps)
    plt.xlabel('steps')
-   plt.ylabel('error')
+   plt.ylabel('energy')
    # fci
    ehf  = -11.4467766233 
    efci = -11.5799784149 
+   plt.axhline(y=ehf, linewidth=2, color='r')
    plt.axhline(y=efci, linewidth=2, color='b')
-   plt.ylim(efci-0.01)#,ehf+1.0)
+   plt.ylim(efci-0.01,ehf+0.02)
    plt.ion()
    plt.show()
    prefix = 'energy'
@@ -191,7 +103,8 @@ def tree_rand(depth,n,D1):
       ni = nup
    return isometries
 
-def tree_rand0(depth,n,D1,occun,noise=0.e-1):
+def tree_rand0(depth,n,D1,occun,noise=1.e-2):
+   print '\n[tree_rand0]'
    isometries = []
    ni = n
    idx = 0
@@ -221,10 +134,27 @@ def tree_rand0(depth,n,D1,occun,noise=0.e-1):
    # check 
    sites = [0]*len(isometries)
    for idx,site in enumerate(isometries):
-      print 'idx=',idx
-      print 'site=',site
       sites[idx] = tf.Variable(site)
    return sites
+
+# Disentangler
+def tree_udis0(depth,n,D1,noise=1.e-2):
+   print '\n[tree_udis0]'
+   usites = []
+   ni = n
+   idx = 0
+   for i in range(depth-1):
+      nup = min(ni**2,D1)
+      nlsite = 2**(depth-1-i)
+      nusite = nlsite-1
+      print 'layer=',i,'nusite=',nusite,'ni=',ni
+      for j in range(nusite):
+         t = numpy.random.uniform(-1,1,ni*ni*ni*ni)
+         t = t*noise
+	 usites.append( tf.Variable(t) )
+         idx += 1
+      ni = nup
+   return usites
 
 # <T1|T2>
 def tree_dot(depth,t1,t2,debug=False):
@@ -258,13 +188,102 @@ def tree_dot(depth,t1,t2,debug=False):
    ova = tf.reshape(ovaSeed0[0],[],name='ova')
    return ova
 
+#
+# Expectation value
+#
+def tree_cntr(depth,t1,t2,mpo):
+   ovaSeed0 = [tf.constant(site) for site in mpo]
+   idx = 0
+   for i in range(depth):
+      nlsite = 2**(depth-1-i)
+      ovaSeed1 = [0]*nlsite
+      for j in range(nlsite):
+         s1 = ovaSeed0[2*j]
+         s2 = ovaSeed0[2*j+1]
+         bs = t1[idx] 
+         ks = t2[idx]
+         # contraction of mpo
+         #     |
+         #    / \
+         #   |   |	 	    
+         # --*---*--
+	 #   |   |	 	    
+   	 #    \ /
+   	 #     |
+	 # (u,d1,d2),(l,r,d1,d1')=>(u,d2,l,r,d1')
+	 # (u,d2,l,r,d1'),(r,r',d2,d2')=>(u,l,d1',r',d2')
+	 # (u,l,d1',r',d2'),(u',d1',d2')=>(u,l,r',u')
+	 # (u,l,r',u')->(l,r',u,u')
+	 tmp = tflib.tensordot(bs,s1,axes=([1],[2]))      
+	 tmp = tflib.tensordot(tmp,s2,axes=([1,3],[2,0])) 
+	 tmp = tflib.tensordot(tmp,ks,axes=([2,4],[1,2])) 
+	 tmp = tf.transpose(tmp,perm=[1,2,0,3])   
+	 ovaSeed1[j] = tmp
+         idx += 1
+      ovaSeed0 = [ova for ova in ovaSeed1]
+   return tf.reshape(ovaSeed0[0],[])
+
+# <T|H|T>
+def calHexp(depth,t1,t2,hmpo,debug=True):
+   if debug: print '\n[calHexp]'
+   hpwts,mpos = hmpo
+   nops = len(mpos)
+   nsite = len(mpos[0])
+   if debug: print ' nops/nsite=',nops,nsite
+   n1 = len(t1)
+   n2 = len(t2)
+   assert n1 == n2 
+   # sum over operators: ex = <Psi|Hx|Psi>
+   Hpp = tf.Variable(0.,dtype=tf.float64)
+   for iop in range(nops):
+      # for each operator, we do the renormalization along tree depth
+      contraction = tree_cntr(depth,t1,t2,mpos[iop])
+      Hpp += tf.mul(contraction,hpwts[iop])
+   return Hpp 
+
+# N-mpo
+def genNmpo(nsite):
+   iden = numpy.identity(4)
+   nmat = numpy.zeros((4,4))
+   nmat[1,1] = 1.0
+   nmat[2,2] = 1.0
+   nmat[3,3] = 2.0
+   nmpo = [0]*nsite
+   # s0
+   tmp = numpy.zeros((1,2,4,4))
+   tmp[0,0] = iden
+   tmp[0,1] = nmat
+   nmpo[0] = tmp
+   # s0-s[-1]
+   tmp = numpy.zeros((2,2,4,4))
+   tmp[0,0] = iden
+   tmp[0,1] = nmat
+   tmp[1,1] = iden
+   for i in range(1,nsite-1):
+      nmpo[i] = tmp
+   # s[-1]
+   tmp = numpy.zeros((2,1,4,4))
+   tmp[0,0] = nmat
+   tmp[1,0] = iden
+   nmpo[-1] = tmp
+   return nmpo
+
+# <T|N|T>
+def calNexp(depth,t1,debug=True):
+   if debug: print '\n[calNexp]'
+   nsite = 2**depth
+   nmpo = genNmpo(nsite)
+   Hpp = tree_cntr(depth,t1,t1,nmpo)
+   return Hpp 
+
 if __name__ == '__main__':
    
    import tflib
    L = 8
    n = 4
    # ValueError: Cannot create a tensor proto whose content is larger than 2GB.
-   D1 = 1
+   # D1 = 1 -> Relax to Hartree-Fock energy
+   D1 = 10
    occun = [1]*L+[0]*L 
 
    depth = int(numpy.log2(L))
@@ -276,32 +295,38 @@ if __name__ == '__main__':
    for isite in range(nsite):
       print isite,sites[isite].get_shape()
 
+   #disentanglers   
+   sites2 = tree_udis0(depth,n,D1)
+   nsite2 = len(sites2)
+   for isite in range(nsite2):
+      print isite,sites2[isite].get_shape()
+
    normalization = tree_dot(depth,sites,sites)
 
    Npp = calNexp(depth,sites)
-   
    hmpo = loadHmpo('hop8') 
    Hpp = calHexp(depth,sites,sites,hmpo)
    energy = tf.div(Hpp,normalization)
 
-   import h6
-   mps1 = tflib.mps_rand0(L,n,D1,occun,noise=0.)
-   mps1_normalization = tflib.mps_dot(mps1,mps1)
-   mps1_Hpp = h6.calHexp(mps1,'hop8')
-   mps1_energy = tf.div(mps1_Hpp,mps1_normalization)
+   #import h6
+   #mps1 = tflib.mps_rand0(L,n,D1,occun,noise=0.)
+   #mps1_normalization = tflib.mps_dot(mps1,mps1)
+   #mps1_Hpp = h6.calHexp(mps1,'hop8')
+   #mps1_energy = tf.div(mps1_Hpp,mps1_normalization)
 
    init = tf.initialize_all_variables()
    with tf.Session() as sess:
       sess.run(init)
+      #print
+      #print 'check_MPS'
+      #print '<P|P>  =',sess.run(mps1_normalization)
+      #print '<P|H|P>=',sess.run(mps1_Hpp)
+      #print 'Energy =',sess.run(mps1_energy)
+      print
       print 'check'
       print '<P|P>  =',sess.run(normalization)
       print '<P|N|P>=',sess.run(Npp)
       print '<P|H|P>=',sess.run(Hpp)
       print 'Energy =',sess.run(energy)
-      print 'check_MPS'
-      print '<P|P>  =',sess.run(mps1_normalization)
-      print '<P|H|P>=',sess.run(mps1_Hpp)
-      print 'Energy =',sess.run(mps1_energy)
-      exit()
 
    optimize([depth,sites,hmpo],energy,nsteps=500)
